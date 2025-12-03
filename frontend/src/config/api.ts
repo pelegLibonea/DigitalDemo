@@ -17,6 +17,8 @@ export const API_CONFIG = {
   documents: {
     list: `${API_BASE_URL}/api/documents`,
     detail: (docId: string) => `${API_BASE_URL}/api/documents/${docId}`,
+    approve: (docId: string) => `${API_BASE_URL}/api/documents/${docId}/approve`,
+    saveResults: (docId: string) => `${API_BASE_URL}/api/documents/${docId}/results`,
     upload: `${API_BASE_URL}/api/upload`,
   },
 

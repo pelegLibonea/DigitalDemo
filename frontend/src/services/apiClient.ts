@@ -113,6 +113,36 @@ class APIClient {
   }
 
   /**
+   * Approve a document (sets status = 'approved')
+   */
+  async approveDocument(docId: string): Promise<void> {
+    const response = await fetch(API_CONFIG.documents.approve(docId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to approve document: ${response.status}`);
+    }
+  }
+
+  /**
+   * Save updated processed document JSON to original results file
+   */
+  async saveProcessedDocument(docId: string, payload: ProcessedDocument): Promise<void> {
+    const response = await fetch(API_CONFIG.documents.saveResults(docId), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to save JSON: ${response.status} - ${text}`);
+    }
+  }
+
+  /**
    * Health check
    */
   async healthCheck(): Promise<boolean> {
