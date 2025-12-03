@@ -1,0 +1,42 @@
+# ---- Python virtual environment ----
+venv/
+*/venv/
+
+# ---- Python cache ----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# ---- IDE / Editor files ----
+.vscode/
+.idea/
+
+# ---- Local environment configuration ----
+.env
+*.env
+
+# ---- SQLite DB file ----
+storage/documents.db
+
+# ---- Uploaded files ----
+storage/incoming/
+storage/results/
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Node.js (if you add frontend) ----
+node_modules/
+
+# ---- OS junk ----
+Thumbs.db
+.DS_Store
+
+# ---- Backups ----
+*.bak
+*.tmp
+*.pdf
+*.tif

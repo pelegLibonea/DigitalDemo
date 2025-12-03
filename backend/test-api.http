@@ -1,0 +1,86 @@
+### 0. Health check
+@doc_id = 8347e1a0-c92e-42a6-a216-85f57e094380
+
+
+GET http://localhost:8808/health
+
+
+
+### 1. List documents (should be empty at first)
+GET http://localhost:8808/api/documents
+
+
+
+#### 2. Upload PDF or image file
+POST http://localhost:8808/api/upload
+Content-Type: multipart/form-data; boundary=BOUNDARY
+
+--BOUNDARY
+Content-Disposition: form-data; name="file"; filename="Untitled document.pdf"
+
+< C:\\DigitalDemo\\backend\\tests\\Untitled document.pdf
+--BOUNDARY
+Content-Disposition: form-data; name="type"
+
+invoice
+--BOUNDARY--
+
+
+
+### 3. List documents (after upload)
+GET http://localhost:8808/api/documents
+
+
+
+### 4. Get document details — fill in real doc_id returned from upload
+GET http://localhost:8808/api/documents/{{doc_id}}
+
+
+
+### A. Mark document as "processing"
+POST http://localhost:8808/api/notify/processing-started
+Content-Type: application/json
+
+{
+  "doc_id": "7a79eca4-ec0a-4795-9da2-3c3a89915825"
+}
+
+### C. Mark document as "error"
+POST http://localhost:8808/api/notify/error
+Content-Type: application/json
+
+{
+  "doc_id": "7a79eca4-ec0a-4795-9da2-3c3a89915825",
+  "error_message": "Simulated FormStorm failure"
+}
+
+### 5. Notify that FormStorm finished processing
+# Before running this:
+#   - create these test files manually:
+#     backend\storage\results\<doc_id>.pdf
+#     backend\storage\results\<doc_id>.json
+#
+# Replace <doc_id> and paths below.
+POST http://localhost:8808/api/notify/result-ready
+Content-Type: application/json
+
+{
+  "doc_id": "<doc_id>",
+  "pdf_path": "C:/DigitalDemo/backend/storage/results/<doc_id>.pdf",
+  "json_path": "C:/DigitalDemo/backend/storage/results/<doc_id>.json"
+}
+
+
+
+### 6. Check details again (status should be "ready")
+GET http://localhost:8808/api/documents/{{doc_id}}
+
+
+
+### 7. Download PDF result
+GET http://localhost:8808/api/results/pdf/{{doc_id}}
+
+
+
+### 8. Download JSON result
+GET http://localhost:8808/api/results/json/{{doc_id}}
