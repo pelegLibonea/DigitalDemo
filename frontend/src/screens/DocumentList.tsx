@@ -1,21 +1,62 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import { apiClient } from "../services/apiClient";
+import { API_CONFIG } from "../config/api";
 import type { DocumentListItem } from "../services/apiClient";
 
 export default function DocumentList() {
     const [docs, setDocs] = useState<DocumentListItem[]>([]);
+    const [isConnected, setIsConnected] = useState(false);
 
-    useEffect(() => {
+    const loadDocuments = useCallback(() => {
         apiClient.listDocuments().then((data) => setDocs(data));
     }, []);
+
+    // Initial load
+    useEffect(() => {
+        loadDocuments();
+    }, [loadDocuments]);
+
+    // Subscribe to global SSE events for real-time updates
+    useEffect(() => {
+        const eventSource = new EventSource(API_CONFIG.events.global);
+
+        eventSource.onopen = () => {
+            setIsConnected(true);
+        };
+
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log("SSE event received:", data);
+
+                // Reload document list when any document status changes
+                if (data.event === "result-ready" || 
+                    data.event === "processing-started" || 
+                    data.event === "error") {
+                    loadDocuments();
+                }
+            } catch (e) {
+                console.error("Failed to parse SSE event:", e);
+            }
+        };
+
+        eventSource.onerror = () => {
+            setIsConnected(false);
+        };
+
+        return () => {
+            eventSource.close();
+        };
+    }, [loadDocuments]);
 
     // --- Compute counters ---
     const counts = {
         queued: docs.filter((d) => d.status === "queued").length,
         processing: docs.filter((d) => d.status === "processing").length,
         ready: docs.filter((d) => d.status === "ready").length,
+        approved: docs.filter((d) => d.status === "approved").length,
         error: docs.filter((d) => d.status === "error").length,
     };
 
@@ -23,6 +64,8 @@ export default function DocumentList() {
         switch (status) {
             case "ready":
                 return "bg-green-100 text-green-700";
+            case "approved":
+                return "bg-purple-100 text-purple-700";
             case "processing":
                 return "bg-yellow-100 text-yellow-700";
             case "queued":
@@ -39,7 +82,15 @@ export default function DocumentList() {
             <div className="max-w-5xl mx-auto">
                 {/* Title + Upload button */}
                 <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-3xl font-semibold">Uploaded Documents</h1>
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-3xl font-semibold">Uploaded Documents</h1>
+                        {isConnected && (
+                            <span className="flex items-center gap-1 text-xs text-green-600">
+                                <span className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></span>
+                                Live
+                            </span>
+                        )}
+                    </div>
 
                     <Link to="/upload">
                         <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
@@ -49,7 +100,7 @@ export default function DocumentList() {
                 </div>
 
                 {/* Summary Bubbles */}
-                <div className="flex gap-4 mb-6">
+                <div className="flex gap-4 mb-6 flex-wrap">
                     <div className="px-4 py-2 rounded-full bg-blue-100 text-blue-700 font-medium">
                         Queued: {counts.queued}
                     </div>
@@ -58,6 +109,9 @@ export default function DocumentList() {
                     </div>
                     <div className="px-4 py-2 rounded-full bg-green-100 text-green-700 font-medium">
                         Ready: {counts.ready}
+                    </div>
+                    <div className="px-4 py-2 rounded-full bg-purple-100 text-purple-700 font-medium">
+                        Approved: {counts.approved}
                     </div>
                     <div className="px-4 py-2 rounded-full bg-red-100 text-red-700 font-medium">
                         Error: {counts.error}
@@ -90,12 +144,12 @@ export default function DocumentList() {
                                         </span>
                                     </td>
                                     <td className="p-3">
-                                        {d.status === "ready" ? (
+                                        {(d.status === "ready" || d.status === "approved") ? (
                                             <Link
                                                 to={`/documents/${d.id}`}
                                                 className="text-blue-600 hover:underline"
                                             >
-                                                View →
+                                                {d.status === "approved" ? "View ✓" : "View →"}
                                             </Link>
                                         ) : (
                                             <span className="text-gray-400 italic">

@@ -26,9 +26,18 @@ export interface DocumentDetail extends DocumentListItem {
 export interface ExtractedField {
   field_name: string;
   field_value: string;
+  field_ocr_value?: string;
+  typist_content?: string;
   visible: boolean;
   description: string;
   readonly: boolean;
+  array_index?: number;
+  field_order?: number;
+  confidence?: number;
+  region?: number[];
+  field_type?: string;
+  html_id?: string;
+  dictionary?: string;
 }
 
 export interface ProcessedPage {

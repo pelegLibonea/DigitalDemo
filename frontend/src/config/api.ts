@@ -28,6 +28,12 @@ export const API_CONFIG = {
     json: (docId: string) => `${API_BASE_URL}/api/results/json/${docId}`,
   },
 
+  // Server-Sent Events for real-time updates
+  events: {
+    global: `${API_BASE_URL}/api/events`,
+    document: (docId: string) => `${API_BASE_URL}/api/events/${docId}`,
+  },
+
   // Notification endpoints (used by external processors)
   notify: {
     resultReady: `${API_BASE_URL}/api/notify/result-ready`,

@@ -1,12 +1,13 @@
 import uuid
 import json
+import asyncio
 from pathlib import Path
 from datetime import datetime
-from typing import List
+from typing import List, Set
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 import os
 
 from .schemas import DocumentListItem, DocumentDetail, NotifyResultReadyPayload
@@ -30,11 +31,98 @@ app.add_middleware(
 
 ALLOWED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 
+# SSE: connected clients per doc_id
+sse_clients: dict[str, Set[asyncio.Queue]] = {}
+# Global SSE clients for document list updates
+global_sse_clients: Set[asyncio.Queue] = set()
+
 
 def validate_extension(filename):
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
+
+
+async def broadcast_update(doc_id: str, event_type: str, data: dict):
+    """Broadcast an SSE event to all clients watching a specific document and global listeners."""
+    message = json.dumps({"event": event_type, "doc_id": doc_id, **data})
+    
+    # Notify specific document listeners
+    if doc_id in sse_clients:
+        for queue in list(sse_clients[doc_id]):
+            try:
+                await queue.put(message)
+            except Exception:
+                pass  # Client disconnected
+    
+    # Notify global listeners (document list)
+    for queue in list(global_sse_clients):
+        try:
+            await queue.put(message)
+        except Exception:
+            pass
+
+
+@app.get("/api/events")
+async def sse_global_events():
+    """Server-Sent Events endpoint for all document updates (for document list page)."""
+    queue: asyncio.Queue = asyncio.Queue()
+    global_sse_clients.add(queue)
+
+    async def event_generator():
+        try:
+            yield f"data: {json.dumps({'event': 'connected'})}\n\n"
+            while True:
+                message = await queue.get()
+                yield f"data: {message}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            global_sse_clients.discard(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@app.get("/api/events/{doc_id}")
+async def sse_document_events(doc_id: str):
+    """Server-Sent Events endpoint for real-time document updates."""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    if doc_id not in sse_clients:
+        sse_clients[doc_id] = set()
+    sse_clients[doc_id].add(queue)
+
+    async def event_generator():
+        try:
+            # Send initial connection event
+            yield f"data: {json.dumps({'event': 'connected', 'doc_id': doc_id})}\n\n"
+            while True:
+                message = await queue.get()
+                yield f"data: {message}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            sse_clients[doc_id].discard(queue)
+            if not sse_clients[doc_id]:
+                del sse_clients[doc_id]
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.get("/health")
@@ -165,7 +253,7 @@ def get_json(doc_id: str):
 
 
 @app.post("/api/notify/result-ready")
-def notify_result_ready(payload: NotifyResultReadyPayload):
+async def notify_result_ready(payload: NotifyResultReadyPayload):
     conn = get_connection()
 
     # Ensure document exists
@@ -192,13 +280,16 @@ def notify_result_ready(payload: NotifyResultReadyPayload):
     conn.commit()
     conn.close()
 
+    # Broadcast SSE update to connected clients
+    await broadcast_update(payload.doc_id, "result-ready", {"status": "ready"})
+
     return {"status": "ok"}
 
 
 from fastapi import Body
 
 @app.post("/api/notify/processing-started")
-def notify_processing_started(payload: dict = Body(...)):
+async def notify_processing_started(payload: dict = Body(...)):
     doc_id = payload.get("doc_id")
     if not doc_id:
         raise HTTPException(status_code=400, detail="doc_id missing")
@@ -218,10 +309,13 @@ def notify_processing_started(payload: dict = Body(...)):
     conn.commit()
     conn.close()
 
+    # Broadcast SSE update
+    await broadcast_update(doc_id, "processing-started", {"status": "processing"})
+
     return {"status": "ok"}
 
 @app.post("/api/notify/error")
-def notify_error(payload: dict = Body(...)):
+async def notify_error(payload: dict = Body(...)):
     doc_id = payload.get("doc_id")
     error_message = payload.get("error_message")
 
@@ -251,6 +345,9 @@ def notify_error(payload: dict = Body(...)):
 
     conn.commit()
     conn.close()
+
+    # Broadcast SSE update
+    await broadcast_update(doc_id, "error", {"status": "error", "error_message": error_message})
 
     return {"status": "ok"}
 
