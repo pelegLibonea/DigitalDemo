@@ -46,6 +46,9 @@ export interface ProcessedPage {
 
 export interface ProcessedDocument {
   pages: ProcessedPage[];
+  document_type?: string;
+  doc_type?: string;
+  type?: string;
 }
 
 class APIClient {

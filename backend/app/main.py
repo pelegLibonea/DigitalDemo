@@ -271,12 +271,39 @@ async def notify_result_ready(payload: NotifyResultReadyPayload):
         conn.close()
         raise HTTPException(status_code=400, detail="json_path does not exist")
 
-    # Update db
-    conn.execute("""
-        UPDATE documents
-        SET result_pdf_path = ?, result_json_path = ?, status = 'ready'
-        WHERE id = ?
-    """, (payload.pdf_path, payload.json_path, payload.doc_id))
+    # Extract document_type from JSON result if available
+    doc_type = None
+    if payload.json_path:
+        try:
+            with open(payload.json_path, "r", encoding="utf-8") as f:
+                json_data = json.load(f)
+                # Try top-level keys first
+                doc_type = json_data.get("document_type") or json_data.get("doc_type") or json_data.get("type")
+                
+                # If not found at top level, look in fields of first page
+                if not doc_type and "pages" in json_data and len(json_data["pages"]) > 0:
+                    fields = json_data["pages"][0].get("fields", [])
+                    for field in fields:
+                        field_name = field.get("field_name", "").lower()
+                        if field_name in ("doctype", "doc_type", "document_type", "documenttype"):
+                            doc_type = field.get("typist_content") or field.get("field_value")
+                            break
+        except Exception as e:
+            print(f"Warning: Could not extract document_type from JSON: {e}")
+
+    # Update db - include type if extracted from JSON
+    if doc_type:
+        conn.execute("""
+            UPDATE documents
+            SET result_pdf_path = ?, result_json_path = ?, status = 'ready', type = ?
+            WHERE id = ?
+        """, (payload.pdf_path, payload.json_path, doc_type, payload.doc_id))
+    else:
+        conn.execute("""
+            UPDATE documents
+            SET result_pdf_path = ?, result_json_path = ?, status = 'ready'
+            WHERE id = ?
+        """, (payload.pdf_path, payload.json_path, payload.doc_id))
     conn.commit()
     conn.close()
 
